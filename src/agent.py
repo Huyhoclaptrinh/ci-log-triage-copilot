@@ -192,7 +192,7 @@ def propose_actions(category):
     }.get(category, "unknown")
     return root, acts
 
-def agent_triage(message, weak_cat, weak_conf, tool_budget=2):
+def agent_triage(message, weak_cat, weak_conf, tool_budget=3):
     retrieved = retrieve(str(message), topk=8)
     category = decide_category(message, weak_cat, weak_conf, retrieved)
     root, actions = propose_actions(category)
@@ -203,14 +203,31 @@ def agent_triage(message, weak_cat, weak_conf, tool_budget=2):
     if category in ["dependency", "network"] and tool_budget > 0:
         res = tool_pip_check(message)
         tools_used.append(res)
+        tool_budget -= 1
         if "torch_cuda" in res["hints"]:
             actions.append("Check CUDA/toolkit compatibility for torch build")
 
     if category == "timeout" and tool_budget > 0:
         res = tool_retry_with_flag(message)
         tools_used.append(res)
+        tool_budget -= 1
         if res["flaky"] and not any("rerun" in a.lower() for a in actions):
             actions.insert(0, "Add retry/backoff or reduce parallelism")
+
+    # Opportunistic grep to confirm signatures
+    if tool_budget > 0:
+        patterns_to_grep = ["ModuleNotFoundError", "ECONNRESET", "timeout", "permission denied", "no space left"]
+        res = tool_grep_logs(message, patterns_to_grep)
+        if res["count"] > 0:
+            tools_used.append(res)
+        tool_budget -= 1
+
+    # Optional docker hint pass
+    if category in ["infra", "code", "unknown"] and tool_budget > 0:
+        res = tool_docker_inspect(message)
+        if res["hints"]:
+            tools_used.append(res)
+        tool_budget -= 1
 
     # Finalize
     return {

@@ -21,7 +21,11 @@ def display_triage_card(result):
     if result["tools_run"]:
         print("Tools Run :")
         for tool_res in result["tools_run"]:
-            print(f"  - {tool_res['tool']}: {tool_res['hints']}")
+            # Gracefully handle different tool outputs
+            details = tool_res.get('hints')
+            if details is None:
+                details = tool_res.get('found', 'No details')
+            print(f"  - {tool_res['tool']}: {details}")
     print("="*53 + "\n")
 
 def main():
@@ -54,22 +58,24 @@ def main():
             "TypeError: NoneType has no attribute 'split'"
         ]
         for msg in demo_messages:
-            weak_cat = classify_message_weakly(msg)
-            result = agent_triage(msg, weak_cat)
+            weak_cat, weak_conf = classify_message_weakly(msg)
+            result = agent_triage(msg, weak_cat, weak_conf)
             display_triage_card(result)
     else:
         # Prepare the data
         fail_df = prepare_data(args.log_file)
         
         # Add weak labels
-        fail_df["category_weak"] = fail_df["message"].apply(classify_message_weakly)
+        weak_labels = fail_df["message"].apply(classify_message_weakly)
+        fail_df["category_weak"] = weak_labels.apply(lambda x: x[0])
+        fail_df["confidence_weak"] = weak_labels.apply(lambda x: x[1])
 
         print(f"\n--- Running Triage Agent on {min(args.limit, len(fail_df))} unique Failures ---")
         # Get unique failure messages to ensure a diverse demonstration
         unique_failures_df = fail_df.drop_duplicates(subset=['message']).head(args.limit)
         
         for _, row in unique_failures_df.iterrows():
-            result = agent_triage(row["message"], row["category_weak"])
+            result = agent_triage(row["message"], row["category_weak"], row["confidence_weak"])
             display_triage_card(result)
 
 if __name__ == "__main__":
