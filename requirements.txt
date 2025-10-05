@@ -1,0 +1,9 @@
+numpy
+pandas
+sentence-transformers
+faiss-cpu
+rank-bm25
+rapidfuzz
+omegaconf
+pyyaml
+scikit-learn
