@@ -2,16 +2,20 @@ import os
 
 # --- Global Settings ---
 # Use a dedicated output directory for all generated artifacts
-BASE_DIR = "/home/kita/Documents/ci-log-triage-copilot"
+BASE_DIR = os.getcwd()
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 ARTIFACTS_DIR = os.path.join(OUTPUT_DIR, "artifacts")
 KB_DIR = os.path.join(OUTPUT_DIR, "kb")
 REPORTS_DIR = os.path.join(OUTPUT_DIR, "reports")
+EVAL_DIR = os.path.join(OUTPUT_DIR, "eval") # New line
 DOCSTORE_PATH = os.path.join(ARTIFACTS_DIR, "docstore.jsonl")
 FAISS_INDEX_PATH = os.path.join(ARTIFACTS_DIR, "faiss.index")
 BM25_PATH = os.path.join(ARTIFACTS_DIR, "bm25.pkl")
 TFIDF_PATH = os.path.join(ARTIFACTS_DIR, "tfidf.pkl")
 PLAYBOOK_YAML_PATH = os.path.join(KB_DIR, "playbook.yml")
+
+# Embedding Model
+EMBEDDING_MODEL_NAME = "BAAI/bge-small-en-v1.5" # High performance open model
 
 # Rules for weak labeling
 RULES = {

@@ -37,6 +37,20 @@ The project is organized into a modular structure for clarity and maintainabilit
    pip install -r requirements.txt
    ```
 
+## Configuration
+
+### Changing the Embedding Model
+The project supports switching between different Hugging Face sentence-transformer models.
+To change the model, edit `config.py`:
+
+```python
+# config.py
+EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2" # Default
+# EMBEDDING_MODEL_NAME = "BAAI/bge-small-en-v1.5" # Alternative
+```
+
+**Note:** After changing the model, you must rebuild the indexes by running with the `--build` flag or deleting the `output/` directory.
+
 ## How to Run
 
 The first time you run the script, it will automatically create the knowledge base and build the necessary search indexes in the `output/` directory.

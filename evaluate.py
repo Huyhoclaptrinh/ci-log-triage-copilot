@@ -1,9 +1,15 @@
 import json
 import numpy as np
 from rapidfuzz import fuzz
+import os # Import os for path joining
 
 # Import from our new modules
 from src.agent import initialize_retriever, retrieve, agent_triage, classify_message_weakly
+
+# Import config for paths
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import EVAL_DIR # Import EVAL_DIR
 
 # --- Metric Calculation Functions ---
 
@@ -81,8 +87,8 @@ def evaluate_triage(tri_gold):
 
 def main():
     # Load gold standard files
-    qrels = [json.loads(l) for l in open("/home/kita/Documents/ci-log-triage-copilot/output/eval/retrieval_qrels.jsonl", "r", encoding="utf-8")]
-    tri_gold = [json.loads(l) for l in open("/home/kita/Documents/ci-log-triage-copilot/output/eval/triage_gold.jsonl", "r", encoding="utf-8")]
+    qrels = [json.loads(l) for l in open(os.path.join(EVAL_DIR, "retrieval_qrels.jsonl"), "r", encoding="utf-8")]
+    tri_gold = [json.loads(l) for l in open(os.path.join(EVAL_DIR, "triage_gold.jsonl"), "r", encoding="utf-8")]
 
     # Initialize the retrieval system (loads models, etc.)
     initialize_retriever()

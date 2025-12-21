@@ -8,7 +8,7 @@ from glob import glob
 # Import config
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import KB_DIR, PLAYBOOK_YAML_PATH, DOCSTORE_PATH, FAISS_INDEX_PATH, BM25_PATH, TFIDF_PATH
+from config import KB_DIR, PLAYBOOK_YAML_PATH, DOCSTORE_PATH, FAISS_INDEX_PATH, BM25_PATH, TFIDF_PATH, ARTIFACTS_DIR, EMBEDDING_MODEL_NAME
 
 def chunk_text(s, size=1200, overlap=150):
     """Chunk text into smaller, overlapping pieces."""
@@ -102,6 +102,7 @@ def build_indexes():
     Chunks the KB documents and builds the FAISS, BM25, and TF-IDF indexes.
     """
     print("--- Building Retrieval Indexes ---")
+    os.makedirs(ARTIFACTS_DIR, exist_ok=True) # Ensure artifacts directory exists
     # 1. Chunk all documents
     chunk_rows = []
     with open(PLAYBOOK_YAML_PATH, "r", encoding="utf-8") as f:
@@ -126,7 +127,7 @@ def build_indexes():
     try:
         from sentence_transformers import SentenceTransformer
         import faiss
-        dense_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        dense_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
         embs = dense_model.encode(texts, normalize_embeddings=True, show_progress_bar=True)
         faiss_index = faiss.IndexFlatIP(embs.shape[1])
         faiss_index.add(embs.astype("float32"))

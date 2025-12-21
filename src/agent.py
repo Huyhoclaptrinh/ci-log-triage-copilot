@@ -10,7 +10,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import (
     DOCSTORE_PATH, FAISS_INDEX_PATH, BM25_PATH, TFIDF_PATH, PLAYBOOK_YAML_PATH,
-    RULES, NEGATE
+    RULES, NEGATE, EMBEDDING_MODEL_NAME
 )
 
 # --- Model and Retrieval Globals ---
@@ -79,7 +79,7 @@ def initialize_retriever():
     try:
         from sentence_transformers import SentenceTransformer
         import faiss
-        model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        model = SentenceTransformer(EMBEDDING_MODEL_NAME)
         faiss_index = faiss.read_index(FAISS_INDEX_PATH)
         print("FAISS retriever initialized.")
     except Exception as e:
