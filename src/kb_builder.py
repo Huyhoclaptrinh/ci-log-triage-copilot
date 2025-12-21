@@ -10,6 +10,13 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import KB_DIR, PLAYBOOK_YAML_PATH, DOCSTORE_PATH, FAISS_INDEX_PATH, BM25_PATH, TFIDF_PATH, ARTIFACTS_DIR, EMBEDDING_MODEL_NAME
 
+def get_kb_last_modified():
+    """Returns the last modification time of the playbook.md file."""
+    playbook_md_path = os.path.join(KB_DIR, "playbook.md")
+    if os.path.exists(playbook_md_path):
+        return os.path.getmtime(playbook_md_path)
+    return 0
+
 def chunk_text(s, size=1200, overlap=150):
     """Chunk text into smaller, overlapping pieces."""
     out, i = [], 0
@@ -29,42 +36,126 @@ def create_knowledge_base():
     os.makedirs(guides_dir, exist_ok=True)
 
     playbook_content = """
-# CI Triage Playbook (starter)
+# CI Triage Playbook (Comprehensive)
 
 ## dependency
-**Symptoms:** ImportError, ModuleNotFoundError, resolver errors, 'cannot find module'.
-**Checks:** requirements.txt/pip freeze; lockfile; build cache.
-**Actions:** pin versions; add missing dep; clear cache; rebuild.
+**Symptoms:** 
+- `ModuleNotFoundError: No module named 'xyz'`
+- `ImportError: cannot import name 'abc'`
+- `pip install` fails with `No matching distribution found`
+- `npm ERR! code ERESOLVE` / `upstream dependency conflict`
+- `Could not find a version that satisfies the requirement`
+**Checks:** 
+- Check `requirements.txt`, `setup.py`, or `package.json` for typos.
+- Verify the package exists on PyPI/npm registry.
+- Check if the package supports the python/node version used in CI.
+- Inspect `pip freeze` or `npm list` output in CI logs.
+**Actions:** 
+- Pin exact versions in `requirements.txt` / `package.json`.
+- Add the missing dependency to the manifest.
+- Clear CI dependency cache (e.g., `actions/cache`).
+- Upgrade pip/npm: `pip install --upgrade pip` / `npm install -g npm`.
 
 ## network
-**Symptoms:** ECONNRESET, EAI_AGAIN, DNS/timeout.
-**Checks:** runner egress/proxy; DNS; flaky endpoints; retry policy.
-**Actions:** add retry/backoff; fix proxy/DNS; cache downloads.
+**Symptoms:** 
+- `ECONNRESET`, `Connection refused`, `Connection timed out`
+- `EAI_AGAIN`, `Temporary failure in name resolution`
+- `502 Bad Gateway`, `503 Service Unavailable` from artifact registry
+- `SSLError: HTTPSConnectionPool(host='xyz', port=443)`
+**Checks:** 
+- Is the URL correct and reachable from the CI runner?
+- Are there corporate proxy settings (`http_proxy`, `no_proxy`) required?
+- Is the external service (PyPI, Docker Hub) down?
+- Check DNS resolution in the runner: `nslookup google.com`.
+**Actions:** 
+- Implement retry logic with exponential backoff (e.g., `curl --retry 5`).
+- Whitelist the domain in the firewall.
+- Use a local mirror or cache for dependencies.
+- Fix proxy environment variables.
 
 ## timeout
-**Symptoms:** 'timed out', 'exceeded time limit'.
-**Checks:** longest tests; parallelism; resource limits.
-**Actions:** raise timeout; split/parallelize; cache artifacts.
+**Symptoms:** 
+- `Job exceeded maximum allowed time`
+- `The job was canceled because it exceeded the time limit`
+- Test suite hangs indefinitely without output.
+- `command timed out` after X seconds.
+**Checks:** 
+- Identify the specific step taking too long (timestamps in logs).
+- Are tests waiting on a network resource or database lock?
+- Did a recent change increase test coverage significantly?
+**Actions:** 
+- Increase the job timeout limit (e.g., `timeout-minutes: 60`).
+- Split tests into parallel jobs (sharding).
+- Ensure integration tests tear down resources correctly.
+- Cache large assets (Docker layers, dependencies) to speed up build.
 
 ## auth
-**Symptoms:** 401/403, 'permission denied', token errors.
-**Checks:** CI secrets/permissions; token scope/expiry; repo/registry access.
-**Actions:** rotate tokens; fix secret names; least-privilege scopes.
+**Symptoms:** 
+- `401 Unauthorized`, `403 Forbidden`
+- `fatal: Authentication failed for 'https://github.com/...'`
+- `Access Denied`, `Permission denied (publickey)`
+- `docker login` fails.
+**Checks:** 
+- Are the secrets/tokens correctly exposed to the CI job?
+- Has the Personal Access Token (PAT) expired?
+- Does the token have the correct scopes (e.g., `repo`, `read:packages`)?
+- Is the CI runner authorized to access the private registry?
+**Actions:** 
+- Rotate the expired API token/secret.
+- Grant "Read/Write" permissions to the GITHUB_TOKEN.
+- Use SSH keys instead of HTTPS for git operations if possible.
+- Verify secret names match in CI config and repo settings.
 
 ## infra
-**Symptoms:** 'no space left', OOM.
-**Checks:** disk/mem; workspace size; job concurrency; container limits.
-**Actions:** prune caches; increase resources; limit workers.
+**Symptoms:** 
+- `OSError: [Errno 28] No space left on device`
+- `Exit code 137` (OOM Killed)
+- `java.lang.OutOfMemoryError: Java heap space`
+- `CUDA out of memory`
+**Checks:** 
+- Check disk usage: `df -h`.
+- Check memory usage: `free -m`.
+- Are old Docker images/containers filling up the disk?
+- Is the build generating massive log files or artifacts?
+**Actions:** 
+- Run `docker system prune -af` before the job.
+- Increase the runner size (CPU/RAM).
+- Set JVM heap limits: `JAVA_OPTS="-Xmx4g"`.
+- Limit the number of parallel workers (e.g., `pytest -n 4` -> `-n 2`).
 
 ## code
-**Symptoms:** AssertionError, TypeError, NameError.
-**Checks:** failing test locally; recent diffs; static analysis.
-**Actions:** fix logic; add guards; narrow PRs.
+**Symptoms:** 
+- `AssertionError: expected X but got Y`
+- `TypeError`, `ValueError`, `NullPointerException`
+- `Segmentation fault (core dumped)`
+- `SyntaxError: invalid syntax`
+**Checks:** 
+- Does the test pass locally?
+- Check the git diff for recent logic changes.
+- Are there environment differences (OS, versions) between local and CI?
+- Look for uninitialized variables or null references.
+**Actions:** 
+- Fix the logic error in the source code.
+- Add null checks or guard clauses.
+- Update the test case if the requirements changed.
+- Run static analysis (linting) to catch syntax errors early.
 
-## flake
-**Symptoms:** intermittent failures that pass on rerun.
-**Checks:** nondeterministic order/time; network calls in tests.
-**Actions:** seed tests; rerun-on-fail; quarantine & deflake.
+## docker
+**Symptoms:**
+- `manifest for xyz not found: manifest unknown`
+- `COPY failed: file not found in build context`
+- `standard_init_linux.go:211: exec user process caused "exec format error"`
+- `docker: Error response from daemon: conflict`
+**Checks:**
+- Check `.dockerignore` - is the file excluded?
+- Verify the base image tag exists on Docker Hub.
+- Architecture mismatch (building ARM64 on AMD64 runner)?
+- Are you trying to overwrite an existing container name?
+**Actions:**
+- Fix `COPY` paths relative to the build context.
+- Use multi-arch builds (buildx).
+- Remove conflicting containers before running.
+- Ensure the script entrypoint has `chmod +x`.
 """
     with open(playbook_md_path, "w", encoding="utf-8") as f:
         f.write(playbook_content.strip())
@@ -81,8 +172,17 @@ def create_knowledge_base():
         def grab(label):
             m = re.search(rf"\*\*{label}:\*\*(.+?)(?:\n\s*\n|\Z)", block, flags=re.S|re.I)
             if not m: return []
-            parts = re.split(r"[;,]\s*", m.group(1).strip())
-            return [re.sub(r"^[‘’'“”\s]+|[‘’'“”\s]+", "", p.strip()) for p in parts if p.strip()]
+            
+            # Split by lines, then clean each line
+            raw_parts = m.group(1).strip().split('\n')
+            cleaned_parts = []
+            for p in raw_parts:
+                p_stripped = p.strip()
+                if not p_stripped: continue
+                # Remove common list prefixes (-, * , numbers like 1.)
+                p_cleaned = re.sub(r"^(- |\* |\d+\.\s*)", "", p_stripped).strip()
+                cleaned_parts.append(p_cleaned)
+            return cleaned_parts
         cats[cat] = {"symptoms": grab("Symptoms"), "checks": grab("Checks"), "actions": grab("Actions")}
     
     with open(PLAYBOOK_YAML_PATH, "w", encoding="utf-8") as f:

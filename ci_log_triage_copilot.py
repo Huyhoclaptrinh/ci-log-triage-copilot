@@ -4,7 +4,7 @@ import argparse
 # Import from our new modules
 from config import FAISS_INDEX_PATH, BM25_PATH
 from src.data_utils import prepare_data
-from src.kb_builder import create_knowledge_base, build_indexes
+from src.kb_builder import create_knowledge_base, build_indexes, get_kb_last_modified
 from src.agent import initialize_retriever, agent_triage, classify_message_weakly, excerpt
 
 def display_triage_card(result):
@@ -36,13 +36,26 @@ def main():
     parser.add_argument("--demo", action="store_true", help="Run the agent on a diverse set of demo messages.")
     args = parser.parse_args()
 
-    # Build KB and indexes if they don't exist or if forced
-    if args.build or not os.path.exists(FAISS_INDEX_PATH) or not os.path.exists(BM25_PATH):
+    # Smart Build: Rebuild if --build, or missing indexes, or playbook is newer than indexes
+    should_build = args.build
+    
+    if not os.path.exists(FAISS_INDEX_PATH) or not os.path.exists(BM25_PATH):
+        print("Indexes missing. Triggering build.")
+        should_build = True
+    else:
+        # Check timestamps
+        kb_mtime = get_kb_last_modified()
+        index_mtime = os.path.getmtime(FAISS_INDEX_PATH)
+        if kb_mtime > index_mtime:
+            print("Knowledge Base (playbook.md) has changed. Triggering auto-rebuild.")
+            should_build = True
+
+    if should_build:
         print("Building Knowledge Base and Indexes...")
         create_knowledge_base()
         build_indexes()
     else:
-        print("KB and Indexes already exist. Skipping build.")
+        print("KB and Indexes are up to date. Skipping build.")
 
     # Initialize the retrieval system
     initialize_retriever()
