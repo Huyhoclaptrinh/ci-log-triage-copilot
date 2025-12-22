@@ -10,7 +10,8 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import (
     DOCSTORE_PATH, FAISS_INDEX_PATH, BM25_PATH, TFIDF_PATH, PLAYBOOK_YAML_PATH,
-    RULES, NEGATE, EMBEDDING_MODEL_NAME
+    RULES, NEGATE, EMBEDDING_MODEL_NAME,
+    LLM_API_KEY, LLM_MODEL_NAME # Import new LLM config
 )
 
 # --- Model and Retrieval Globals ---
@@ -192,6 +193,146 @@ def propose_actions(category):
     }.get(category, "unknown")
     return root, acts
 
+def generate_solution_prompt(message, retrieved, category, root_cause, tools_used):
+    """
+    Constructs a prompt for an LLM to generate a specific solution.
+    This replaces static lookup with conditional probability generation.
+    """
+    context_text = "\n\n".join([f"--- Source: {r['id']} ---\n{r['text']}" for r in retrieved[:3]])
+    
+    tool_outputs = json.dumps(tools_used, indent=2) if tools_used else "No tool outputs available."
+
+    prompt = f"""You are an expert CI/CD Site Reliability Engineer. 
+Your task is to analyze the following error log and provide a specific, actionable solution.
+
+### Context (Retrieval)
+The following sections from the playbook were retrieved as relevant:
+{context_text}
+
+### Diagnostics
+- **Category:** {category}
+- **Potential Root Cause:** {root_cause}
+- **Tool Outputs:
+{tool_outputs}
+
+### Error Log
+```
+{excerpt(message, n=1000)}
+```
+
+### Instructions
+1. **Analyze** the error log in the context of the retrieved playbook sections.
+2. **Explain** why this error occurred (Grounding).
+3. **Propose** 3 specific, step-by-step actions to fix it.
+4. **Format** your response as a JSON object with keys: "analysis" (string) and "steps" (list of strings).
+"""
+    return prompt
+
+def mock_llm_response(llm_prompt: str):
+    """Mocks an LLM response based on keywords in the prompt."""
+    
+    # Extract category from the prompt for a more accurate mock
+    category_match = re.search(r"### Diagnostics\n- \*\*Category:\*\* (\w+)", llm_prompt)
+    category = category_match.group(1).lower() if category_match else "unknown"
+
+    analysis = ""
+    steps = []
+
+    if category == "dependency":
+        analysis = "Based on the error message and retrieved context, the issue appears to be related to a missing or improperly installed Python package."
+        steps = [
+            "Verify the `requirements.txt` file for the missing package and correct any typos.",
+            "Ensure the package is available on PyPI and compatible with the Python version in CI.",
+            "Clear the CI dependency cache and retry the build."
+        ]
+    elif category == "network":
+        analysis = "The error indicates a network connectivity issue, possibly related to DNS resolution or proxy settings."
+        steps = [
+            "Check CI runner's network connectivity and DNS resolution (`nslookup google.com`).",
+            "Review CI configuration for proxy settings and ensure they are correct.",
+            "Implement retry logic with exponential backoff for network-dependent steps."
+        ]
+    elif category == "timeout":
+        analysis = "The CI job timed out, suggesting an operation exceeded its allocated time limit."
+        steps = [
+            "Identify the specific step causing the timeout from CI logs (look for timestamps).",
+            "Increase the job timeout limit if appropriate, or split long-running tasks into parallel jobs.",
+            "Ensure all tests and processes release resources properly to avoid hangs."
+        ]
+    elif category == "auth":
+        analysis = "Authentication failed, likely due to expired credentials or insufficient permissions."
+        steps = [
+            "Verify the CI secrets/tokens are correct and not expired.",
+            "Check if the token has the necessary scopes or permissions for the attempted operation.",
+            "Rotate the API token/secret if it is compromised or expired."
+        ]
+    elif category == "infra":
+        analysis = "An infrastructure-related error, such as 'no space left on device' or 'out of memory'."
+        steps = [
+            "Check disk and memory usage on the CI runner (`df -h`, `free -m`).",
+            "Implement cleanup steps (e.g., `docker system prune`) before the build.",
+            "Consider increasing the runner size (CPU/RAM) or limiting parallel processes."
+        ]
+    elif category == "code":
+        analysis = "A runtime error in the code, indicating a logic bug or unexpected state."
+        steps = [
+            "Review recent code changes (git diff) for logical errors.",
+            "Run static analysis/linting tools to catch common code issues.",
+            "Ensure local environment matches CI environment (OS, dependencies) for debugging."
+        ]
+    elif category == "docker":
+        analysis = "A Docker-related build or runtime issue."
+        steps = [
+            "Verify `COPY` paths in Dockerfile are correct relative to build context.",
+            "Check `.dockerignore` for accidentally excluded files.",
+            "Ensure the base image tag exists and matches the architecture."
+        ]
+    else: # unknown category
+        analysis = "The system was unable to precisely classify the error, but here are general troubleshooting steps."
+        steps = [
+            "Review the full CI log for any distinct error messages or stack traces.",
+            "Compare the CI environment with a working local environment.",
+            "Consult team documentation or previous similar incidents for guidance."
+        ]
+
+
+    # Extract root cause from prompt to enhance mock analysis if present.
+    root_cause_match = re.search(r"Potential Root Cause: (.+?)\n", llm_prompt)
+    if root_cause_match:
+        mock_root_cause = root_cause_match.group(1).strip()
+        analysis = f"Based on the identified root cause '{mock_root_cause}', {analysis.lower()}"
+
+    return json.dumps({"analysis": analysis, "steps": steps}, indent=2)
+
+# --- LLM API Call ---
+def call_llm_api(llm_prompt: str):
+    """
+    Calls a Google Generative AI LLM to get a solution.
+    Requires `pip install google-generativeai`.
+    """
+    if not LLM_API_KEY:
+        raise ValueError("GEMINI_API_KEY environment variable not set. Cannot call LLM API.")
+    
+    try:
+        import google.generativeai as genai
+    except ImportError:
+        raise ImportError(
+            "The 'google-generativeai' library is not installed. "
+            "Please install it with: pip install google-generativeai"
+        )
+    
+    genai.configure(api_key=LLM_API_KEY)
+    model = genai.GenerativeModel(LLM_MODEL_NAME)
+    
+    try:
+        response = model.generate_content(llm_prompt)
+        # Assuming the LLM is instructed to return JSON
+        return response.text
+    except Exception as e:
+        print(f"Error calling LLM API: {e}")
+        return json.dumps({"analysis": f"Error calling LLM API: {e}", "steps": []}, indent=2)
+
+
 def agent_triage(message, weak_cat, weak_conf, tool_budget=3):
     retrieved = retrieve(str(message), topk=8)
     category = decide_category(message, weak_cat, weak_conf, retrieved)
@@ -228,6 +369,18 @@ def agent_triage(message, weak_cat, weak_conf, tool_budget=3):
         if res["hints"]:
             tools_used.append(res)
         tool_budget -= 1
+    
+    # Generate the LLM Prompt
+    llm_prompt = generate_solution_prompt(message, retrieved, category, root, tools_used)
+
+    # Conditionally get LLM solution (mock or real)
+    llm_solution = ""
+    if LLM_API_KEY:
+        print("Calling actual LLM API...")
+        llm_solution = call_llm_api(llm_prompt)
+    else:
+        print("LLM API key not found, using mock LLM response.")
+        llm_solution = mock_llm_response(llm_prompt)
 
     # Finalize
     return {
@@ -237,5 +390,7 @@ def agent_triage(message, weak_cat, weak_conf, tool_budget=3):
         "citations": cites,
         "tools_run": tools_used,
         "weak_label": weak_cat,
-        "message_excerpt": excerpt(message)
+        "message_excerpt": excerpt(message),
+        "llm_prompt": llm_prompt,
+        "llm_solution": llm_solution # Include mock LLM response
     }

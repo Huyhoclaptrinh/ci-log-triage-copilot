@@ -17,6 +17,10 @@ PLAYBOOK_YAML_PATH = os.path.join(KB_DIR, "playbook.yml")
 # Embedding Model
 EMBEDDING_MODEL_NAME = "BAAI/bge-small-en-v1.5" # High performance open model
 
+# LLM Configuration for Triage
+LLM_API_KEY = os.environ.get("GEMINI_API_KEY") # Use environment variable for API key
+LLM_MODEL_NAME = os.environ.get("GEMINI_MODEL_NAME", "gemini-2.0-flash") # Default to gemini-2.0-flash
+
 # Rules for weak labeling
 RULES = {
     "dependency": [

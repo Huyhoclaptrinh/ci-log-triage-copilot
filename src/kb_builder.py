@@ -17,8 +17,36 @@ def get_kb_last_modified():
         return os.path.getmtime(playbook_md_path)
     return 0
 
+def semantic_chunk_markdown(text, header_level="##"):
+    """
+    Chunks markdown text by headers to ensure semantic units (Symptom+Action) 
+    stay together.
+    """
+    # Split by the header level (e.g., "## ")
+    # The lookahead assertion (?=...) keeps the delimiter
+    sections = re.split(f"(?={header_level} )", text)
+    
+    chunks = []
+    current_chunk = ""
+    
+    for sec in sections:
+        if not sec.strip(): continue
+        
+        # If adding this section exceeds a safe size limit (e.g. 2000 chars), 
+        # we treat the current_chunk as finished and start a new one.
+        # Otherwise, we can group small adjacent sections if desired, 
+        # but for the playbook, usually 1 section = 1 concept.
+        if len(sec) > 2000:
+             # Fallback for massive sections: split them by paragraph
+             sub_parts = chunk_text(sec, size=1200, overlap=150)
+             chunks.extend(sub_parts)
+        else:
+            chunks.append(sec.strip())
+            
+    return chunks
+
 def chunk_text(s, size=1200, overlap=150):
-    """Chunk text into smaller, overlapping pieces."""
+    """Fallback chunker for non-structured text."""
     out, i = [], 0
     while i < len(s):
         ch = s[i:i+size].strip()
@@ -207,8 +235,20 @@ def build_indexes():
     chunk_rows = []
     with open(PLAYBOOK_YAML_PATH, "r", encoding="utf-8") as f:
         pb_txt = f.read()
-    for i, t in enumerate(chunk_text(pb_txt)):
-        chunk_rows.append({"id": f"playbook.yml#{i}", "source": "playbook.yml", "text": t})
+    
+    # Use Semantic Chunking for the main playbook
+    # Note: PLAYBOOK_YAML_PATH actually contains YAML structure, but we want to chunk the Markdown
+    # for better retrieval context. 
+    # Let's read the markdown file instead for semantic chunking source.
+    playbook_md_path = os.path.join(KB_DIR, "playbook.md")
+    if os.path.exists(playbook_md_path):
+        pb_md_txt = open(playbook_md_path, "r", encoding="utf-8").read()
+        for i, t in enumerate(semantic_chunk_markdown(pb_md_txt)):
+            chunk_rows.append({"id": f"playbook.md#{i}", "source": "playbook.md", "text": t})
+    else:
+        # Fallback if MD missing
+        for i, t in enumerate(chunk_text(pb_txt)):
+            chunk_rows.append({"id": f"playbook.yml#{i}", "source": "playbook.yml", "text": t})
 
     for p in glob(os.path.join(KB_DIR, "guides", "*.md")):
         txt = open(p, "r", encoding="utf-8", errors="ignore").read()
